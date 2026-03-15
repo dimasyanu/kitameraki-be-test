@@ -1,16 +1,22 @@
-import {
-  BulkOperationType,
-  Container,
-  PatchOperationType,
-} from '@azure/cosmos'
+import { BulkOperationType, Container, PatchOperationType } from '@azure/cosmos'
 import { Task, TaskFilter, TaskSchema } from '../models/task.model'
-import { container } from '../infra/cosmosClient'
+import { getTasksContainer } from '../infra/cosmosClient'
 import { Paginated } from '../models/common/Paginated'
 import { v4 as uuid } from 'uuid'
 import { NotFoundError } from '../models/common/Error'
 
 export class TaskRepository {
-  constructor(private container: Container) {}
+  private container: Container
+  constructor() {
+    getTasksContainer()
+      .then((c) => {
+        this.container = c
+      })
+      .catch((error) => {
+        console.error('[TaskRepository] Failed to initialize container:', error)
+        throw error
+      })
+  }
 
   /**
    * Fetches a paginated list of tasks based on the provided filter criteria.
@@ -18,7 +24,7 @@ export class TaskRepository {
    * @returns A promise that resolves to a paginated list of tasks.
    */
   async getList(filter: TaskFilter): Promise<Paginated<Task>> {
-    let baseQuery = `SELECT <selections> FROM c WHERE c.organizationId = @organizationId`
+    let baseQuery = `SELECT <selections> FROM Tasks c WHERE c.organizationId = @organizationId`
     const parameters = [
       { name: '@organizationId', value: filter.organizationId },
     ]
@@ -67,9 +73,16 @@ export class TaskRepository {
     parameters.push({ name: '@pageSize', value: filter.pageSize.toString() })
 
     // Fetch items
-    const { resources } = await this.container.items
-      .query({ query, parameters })
-      .fetchAll()
+    const res: any[] = []
+    try {
+      const { resources } = await this.container.items
+        .query({ query, parameters })
+        .fetchAll()
+      res.push(...resources)
+    } catch (error) {
+      console.error('[TaskRepository] Failed to fetch tasks:', error)
+      throw error
+    }
 
     // Fetch total count
     const totalCountQuery = baseQuery.replace('<selections>', 'VALUE COUNT(1)')
@@ -80,7 +93,7 @@ export class TaskRepository {
     const totalCount = countResources[0] || 0
 
     return {
-      items: resources,
+      items: res,
       totalCount,
       startIndex: filter.startIndex,
       pageSize: filter.pageSize,
@@ -179,4 +192,4 @@ export class TaskRepository {
   }
 }
 
-export const taskRepository = new TaskRepository(container)
+export const taskRepository = new TaskRepository()

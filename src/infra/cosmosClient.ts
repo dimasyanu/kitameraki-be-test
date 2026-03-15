@@ -1,4 +1,10 @@
-import { ConnectionMode, CosmosClient, DatabaseResponse } from '@azure/cosmos'
+import {
+  ConnectionMode,
+  Container,
+  CosmosClient,
+  DatabaseResponse,
+  PartitionKeyKind,
+} from '@azure/cosmos'
 
 const endpoint = process.env.COSMOSDB_ENDPOINT
 if (!endpoint) {
@@ -12,44 +18,58 @@ const databaseId = process.env.COSMOSDB_DATABASE
 if (!databaseId) {
   throw new Error('COSMOSDB_DATABASE is not defined.')
 }
-const containerId = process.env.COSMOSDB_CONTAINER
-if (!containerId) {
-  throw new Error('COSMOSDB_CONTAINER is not defined.')
+const tasksContainerId = process.env.COSMOSDB_TASKS_CONTAINER
+if (!tasksContainerId) {
+  throw new Error('COSMOSDB_TASKS_CONTAINER is not defined.')
+}
+const settingsContainerId = process.env.COSMOSDB_SETTINGS_CONTAINER
+if (!settingsContainerId) {
+  throw new Error('COSMOSDB_SETTINGS_CONTAINER is not defined.')
 }
 
-console.log(
-  '[CosmosDB] Establishing Azure Cosmos DB connection:',
+console.log('[CosmosDB] Establishing Azure Cosmos DB connection..')
+const client = new CosmosClient({
   endpoint,
-  'Database:',
-  databaseId,
-  'Container:',
-  containerId,
-)
-const client = new CosmosClient({ endpoint, key })
-
-let database: DatabaseResponse;
-async function initializeCosmosDB() {
-  database = await client.databases.createIfNotExists({ id: databaseId })
-}
-
-initializeCosmosDB().catch((error) => {
-  console.error('[CosmosDB] Initialization failed:', error)
-  process.exit(1)
+  key,
+  connectionPolicy: {
+    connectionMode: ConnectionMode.Gateway,
+  },
 })
 
-export const container = client.database(databaseId).container(containerId)
+console.debug('[CosmosDB] Connection established successfully.')
 
-client.databases
-  .createIfNotExists({ id: databaseId })
-  .then(() => {
-    console.log(`[CosmosDB] Database '${databaseId}' is ready.`)
-    return client
-      .database(databaseId)
-      .containers.createIfNotExists({ id: containerId })
-  })
-  .then(() => {
-    console.log(`[CosmosDB] Container '${containerId}' is ready.`)
-  })
-  .catch((error) => {
-    console.error('[CosmosDB] Error setting up database and container:', error)
-  })
+const createContainerIfNotExists = async (
+  containerId: string,
+): Promise<Container> => {
+  try {
+    const dbResponse = await client.databases.createIfNotExists({
+      id: databaseId,
+    })
+    const response = await dbResponse.database.containers.createIfNotExists({
+      id: containerId,
+      partitionKey: {
+        kind: PartitionKeyKind.Hash,
+        paths: ['/organizationId'],
+      },
+    })
+    console.debug(
+      '[CosmosDB] Container initialized successfully:',
+      databaseId,
+      '>',
+      containerId,
+    )
+    return response.container
+  } catch (error) {
+    console.error(
+      `[CosmosDB] Failed to initialize container '${containerId}':`,
+      error,
+    )
+    throw error
+  }
+}
+
+export const getTasksContainer = async (): Promise<Container> =>
+  await createContainerIfNotExists(tasksContainerId)
+
+export const getSettingsContainer = async (): Promise<Container> =>
+  await createContainerIfNotExists(settingsContainerId)

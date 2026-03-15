@@ -3,7 +3,7 @@ import {
   HttpResponseInit,
   InvocationContext,
 } from '@azure/functions'
-import { badRequest, ok } from '../../utils/response'
+import { badRequest, internalServerError, ok } from '../../utils/response'
 import { taskRepository } from '../../repositories/taskRepository'
 import { TaskStatusSchema } from '../../models/task.model'
 import { z } from 'zod'
@@ -59,23 +59,28 @@ export const getTasks = async (
     }
   }
 
-  const { items, totalCount } = await taskRepository.getList({
-    organizationId,
-    startIndex,
-    pageSize,
-    search,
-    status,
-    priority,
-    tags,
-    startDueDate: startDate,
-    endDueDate: endDate,
-  })
+  try {
+    const { items, totalCount } = await taskRepository.getList({
+      organizationId,
+      startIndex,
+      pageSize,
+      search,
+      status,
+      priority,
+      tags,
+      startDueDate: startDate,
+      endDueDate: endDate,
+    })
 
-  return ok(
-    {
-      items,
-      totalCount,
-    },
-    'Tasks retrieved successfully',
-  )
+    return ok(
+      {
+        items,
+        totalCount,
+      },
+      'Tasks retrieved successfully',
+    )
+  } catch (error) {
+    console.error('[getTasks] Error retrieving tasks:', error)
+    return internalServerError('Failed to retrieve tasks')
+  }
 }
